@@ -1,5 +1,5 @@
-{
-  "name": "opencode-local-models",
+﻿{
+  "name": "opencode-localcat",
   "version": "0.1.0",
   "description": "OpenCode V2 plugin that auto-discovers models from llama.cpp, litellm, and workbuddy-wild backends with full capability metadata.",
   "type": "module",
@@ -35,3 +35,5 @@
   ],
   "license": "MIT"
 }
+
+

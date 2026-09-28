@@ -1,5 +1,5 @@
-{
-  // Example OpenCode V2 config wiring up the opencode-local-models plugin.
+﻿{
+  // Example OpenCode V2 config wiring up the opencode-localcat plugin.
   // Drop this (or merge relevant fields) into:
   //   - ~/.config/opencode/opencode.jsonc   (global)
   //   - .opencode/opencode.jsonc            (project)
@@ -9,8 +9,8 @@
   "plugins": [
     {
       // Use a file:// URL so OpenCode loads the plugin from the local build.
-      // After `npm run build` in d:\Code\opencode-custom-provider, dist/index.js exists.
-      "package": "file:///d:/Code/opencode-custom-provider",
+      // After `npm run build` in d:\Code\opencode-localcat, dist/index.js exists.
+      "package": "file:///d:/Code/opencode-localcat",
       "options": {
         // How often to re-fetch /v1/models from each backend. Default: 5 minutes.
         "refreshIntervalMs": 300000,
@@ -49,3 +49,4 @@
     }
   ]
 }
+

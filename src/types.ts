@@ -1,5 +1,5 @@
-/**
- * Type definitions for the opencode-local-models plugin.
+﻿/**
+ * Type definitions for the opencode-localcat plugin.
  *
  * These describe the shape of plugin options in opencode.jsonc and the
  * responses we parse from each backend's OpenAI-compatible /v1/models
@@ -178,3 +178,4 @@ export interface DiscoveredProvider {
   /** Per-model extended metadata, keyed by model ID. */
   extended: Record<string, ExtendedModelInfo>;
 }
+

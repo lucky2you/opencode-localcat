@@ -1,5 +1,5 @@
-/**
- * opencode-local-models — OpenCode V2 plugin entry point.
+﻿/**
+ * opencode-localcat — OpenCode V2 plugin entry point.
  *
  * Registers three OpenAI-compatible providers (llama.cpp, litellm,
  * workbuddy-wild) into OpenCode's provider registry on startup, then
@@ -12,7 +12,7 @@
  *   {
  *     "plugins": [
  *       {
- *         "package": "file:///path/to/opencode-local-models",
+ *         "package": "file:///path/to/opencode-localcat",
  *         "options": {
  *           "refreshIntervalMs": 300000,
  *           "backends": {
@@ -129,3 +129,4 @@ function recordsEqual(
   }
   return true;
 }
+
