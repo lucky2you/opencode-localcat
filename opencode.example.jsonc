@@ -1,0 +1,51 @@
+{
+  // Example OpenCode V2 config wiring up the opencode-local-models plugin.
+  // Drop this (or merge relevant fields) into:
+  //   - ~/.config/opencode/opencode.jsonc   (global)
+  //   - .opencode/opencode.jsonc            (project)
+  // Then run `opencode` and use /providers and /models to verify discovery.
+
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      // Use a file:// URL so OpenCode loads the plugin from the local build.
+      // After `npm run build` in d:\Code\opencode-custom-provider, dist/index.js exists.
+      "package": "file:///d:/Code/opencode-custom-provider",
+      "options": {
+        // How often to re-fetch /v1/models from each backend. Default: 5 minutes.
+        "refreshIntervalMs": 300000,
+
+        // Per-backend config. Each backend supports:
+        //   baseURL          (required when enabled)  e.g. "http://127.0.0.1:8080/v1"
+        //   apiKey           (optional)                bearer token; "no-key-required" if omitted
+        //   enabled          (optional, default true)  set false to skip a backend
+        //   timeoutMs        (optional, default 5000)  per-request timeout for /v1/models and /props
+        //   headers          (optional)                extra HTTP headers merged onto every request
+        //   includeNonChat   (optional, litellm only)  include embedding/completion models in the list
+        "backends": {
+          "llama-cpp": {
+            "enabled": true,
+            "baseURL": "http://127.0.0.1:8080/v1",
+            // llama.cpp ships with no API key by default; set this only if you started it with --api-key.
+            "apiKey": "no-key-required",
+            "timeoutMs": 5000
+          },
+          "litellm": {
+            "enabled": true,
+            "baseURL": "http://127.0.0.1:4000/v1",
+            // LiteLLM proxy key (set via --master-key or config.yaml). Use a real key in production.
+            "apiKey": "sk-litellm-proxy",
+            "timeoutMs": 5000
+          },
+          "workbuddy-wild": {
+            "enabled": true,
+            "baseURL": "http://127.0.0.1:7863/v1",
+            // WorkBuddy-Wild default token; change if you redefined it in the panel.
+            "apiKey": "WorkBuddy2API",
+            "timeoutMs": 5000
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+# opencode-local-models
+
+> [!NOTE]
+> 本项目的全部源代码（`src/`、`package.json`、`tsconfig.json`、`opencode.example.jsonc` 及本 `README.md`）均由 AI（基于 OpenCode 内置模型）自动生成，未经人工逐行手写。代码经过 `tsc --noEmit` 类型检查并通过构建（`npm run build` 产出 `dist/`），但尚未在真实后端上做端到端验证，使用前请先在本地跑通 llama.cpp / litellm / workbuddy-wild 中的至少一个并确认 `/providers`、`/models` 列表正确。发现问题欢迎提 Issue 或 PR。
+
+OpenCode V2 plugin that auto-discovers models from **llama.cpp**, **LiteLLM**, and **workbuddy-wild** backends and exposes them as first-class OpenCode providers. It pulls the model list from each backend's OpenAI-compatible `/v1/models` endpoint, then enriches every entry with capability metadata (context window, max output tokens, tool/vision/reasoning support) by querying each backend's extended metadata endpoint:
+
+| Backend | List endpoint | Extended endpoint / fields read |
+|---|---|---|
+| llama.cpp | `GET /v1/models` | `GET /props?model=<id>&autoload=0` — reads `default_generation_settings.n_ctx`, `modalities.vision`, `chat_template` (for thinking detection). Falls back to inline `meta.n_ctx`. Multi-preset router shape also scanned for `--ctx-size` / `--predict` argv. |
+| litellm | `GET /v1/models` | Per-model `model_info` (or flattened top-level fields) — reads `max_input_tokens`, `max_output_tokens`, `mode`, `supports_function_calling`, `supports_vision`, `supports_reasoning`, `modalities.input` / `modalities.output`. Non-chat models (`mode !== "chat"`) are filtered out by default. |
+| workbuddy-wild | `GET /v1/models` | Inline `context_length` and `max_output_tokens` on each model object. Enforces the `workbuddy/` or `traework/` model-id prefix (server rejects otherwise). |
+
+When a backend doesn't expose a particular capability flag, the plugin falls back to **name-pattern heuristics** (`-vl`/`vision`/`llava` → image input, `r1`/`o1`/`qwq`/`reasoning` → reasoning, etc.), and finally to OpenCode's own defaults (tools=true, text+image input, 200K context, 32K output).
+
+All three backends are registered under the `@opencode/ai/providers/openai-compatible` package, so chat-completion requests are routed to the correct baseURL with the configured Bearer token.
+
+## Installation
+
+### 1. Build
+
+```bash
+cd d:\Code\opencode-custom-provider
+npm install
+npm run build
+```
+
+This produces `dist/index.js`. OpenCode V2 loads the plugin via the `main` field in `package.json`.
+
+### 2. Wire it into OpenCode
+
+Add the plugin to your `opencode.jsonc` (project or `~/.config/opencode/opencode.jsonc`). Use a `file://` URL pointing at the plugin directory:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "file:///d:/Code/opencode-custom-provider",
+      "options": {
+        "refreshIntervalMs": 300000,
+        "backends": {
+          "llama-cpp":      { "baseURL": "http://127.0.0.1:8080/v1" },
+          "litellm":        { "baseURL": "http://127.0.0.1:4000/v1", "apiKey": "sk-litellm-proxy" },
+          "workbuddy-wild": { "baseURL": "http://127.0.0.1:7863/v1", "apiKey": "WorkBuddy2API" }
+        }
+      }
+    }
+  ]
+}
+```
+
+See [opencode.example.jsonc](./opencode.example.jsonc) for a fully commented version.
+
+### 3. Run
+
+Start at least one backend (e.g. workbuddy-wild listening on `127.0.0.1:7863`), then run `opencode`. In the TUI:
+
+- `/providers` should list `llama-cpp`, `litellm`, `workbuddy-wild` (only those whose backend is up).
+- `/models` lists every discovered model with correct context/output limits and inferred capabilities.
+- Pick a model (e.g. `/model workbuddy-wild/workbuddy/hy3`) and chat as usual.
+
+If you make changes to the source, rebuild and restart OpenCode's background server:
+
+```bash
+npm run build
+opencode service restart
+```
+
+## Configuration reference
+
+All options live under `plugins[].options` in `opencode.jsonc`. There are no environment variables — every value is explicit in the config file.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `refreshIntervalMs` | `number` | `300000` (5 min) | How often to re-fetch `/v1/models` from each backend. Set to `0` to disable auto-refresh. |
+| `backends` | `object` | `{}` | Per-backend config. Keys: `llama-cpp`, `litellm`, `workbuddy-wild`. |
+| `backends.<id>.baseURL` | `string` | (per backend) | OpenAI-compatible base URL including `/v1` suffix. Defaults: `http://127.0.0.1:8080/v1` / `:4000/v1` / `:7863/v1`. |
+| `backends.<id>.apiKey` | `string` | (per backend) | Bearer token. llama.cpp defaults to `"no-key-required"`; LiteLLM and workbuddy-wild require a real key. |
+| `backends.<id>.enabled` | `boolean` | `true` | Set `false` to skip a backend without removing its config block. |
+| `backends.<id>.timeoutMs` | `number` | `5000` | Per-request timeout for `/v1/models` and any extended endpoints. |
+| `backends.<id>.headers` | `object` | `{}` | Extra HTTP headers merged onto every discovery request. |
+| `backends.litellm.includeNonChat` | `boolean` | `false` | Include models whose `mode` is `embedding`/`completion`/etc. in the list. |
+
+## Per-backend notes
+
+### llama.cpp
+
+- Default port `8080`. Started with `llama-server -m model.gguf --host 0.0.0.0 --port 8080`. Add `--api-key X` if you want authentication (then set `apiKey: "X"` in options).
+- The plugin probes `GET /props?model=<id>&autoload=0` per model with a 1.5s timeout. `autoload=0` means **the model is not loaded** — the probe just reads the preset's metadata. 404s on `/props` (older builds without that endpoint) are silently ignored; capability falls back to inline `meta.n_ctx` and name heuristics.
+- Multi-preset routers (multiple models exposed via one server) are supported — the plugin scans each preset's `status.args` for `--ctx-size`/`-c` and `--predict`/`-n`/`--n-predict`.
+- Thinking/reasoning detection reads `default_generation_settings.chat_template` and matches the same markers llama.cpp itself keys on (`enable_thinking`, `reasoning_content`, `◁think▷`, `[THINK]`, `<|channel|>analysis`, `<|channel|>thought`).
+
+### LiteLLM
+
+- Default port `4000`. The plugin reads `model_info` either nested (`data[].model_info`) or flattened onto the model object — both shapes produced by different LiteLLM proxy versions are handled.
+- Non-chat models (`mode: "embedding"`, `"completion"`, `"audio_transcription"`, `"rerank"`, etc.) are filtered out by default. Set `includeNonChat: true` to keep them.
+- `supports_audio_input`/`supports_audio_output` are mapped to the `audio` modality; LiteLLM's `"speech"` modality is normalized to `"audio"` to match OpenCode's vocabulary.
+
+### workbuddy-wild
+
+- Default port `7863` (the Go proxy at `d:\Code\workbuddy-wild`).
+- **Model IDs must use the `workbuddy/` or `traework/` prefix** (e.g. `workbuddy/hy3`, `traework/DeepSeek-V4-Flash`). The server rejects prefix-less names with HTTP 400. The plugin also filters prefix-less ids defensively at discovery time so they never appear in `/models`.
+- The `/v1/models` response from workbuddy-wild already carries `context_length` and `max_output_tokens` inline on each model, so no extra endpoint probe is needed.
+- workbuddy-wild does **not** expose `supports_function_calling` / `supports_vision` / `supports_reasoning` flags. Capabilities beyond context/output limits come from the plugin's name heuristics (e.g. `hy3` → reasoning=true, `DeepSeek-V4-Flash` → reasoning=true).
+
+## Troubleshooting
+
+**A backend doesn't show up in `/providers`.**
+- Check the OpenCode log for `[local-models] <id> offline: <error>`. The most common cause is the backend not running or listening on a different port.
+- Verify with `curl`: `curl -H "Authorization: Bearer <apiKey>" <baseURL>/models` should return a JSON list.
+
+**Models show up but with wrong context/output limits.**
+- For llama.cpp: check `curl <baseURL without /v1>/props` — the `default_generation_settings.n_ctx` there is what the plugin reads. If it's `0` or `512` you started the server without `--ctx-size`.
+- For LiteLLM: check `curl <baseURL>/models` and inspect the `model_info` block per model — the proxy only includes fields it knows about, so a model LiteLLM hasn't seen before will fall back to the plugin defaults (200K context, 32K output).
+- For workbuddy-wild: the limits come straight from `/v1/models`'s `context_length` / `max_output_tokens`. If those are `0` or missing, the server didn't fill them in for that model.
+
+**A model appears in `/models` but chat calls fail with `400 invalid_model`.**
+- workbuddy-wild: confirm the model id has the `workbuddy/` or `traework/` prefix. The plugin filters prefix-less ids, but if you've configured the model elsewhere (e.g. directly in `opencode.jsonc`'s `providers` section) that bypasses the plugin's filter.
+
+**Refresh interval too slow.**
+- Lower `refreshIntervalMs` (e.g. `60000` for 1-minute refresh). The plugin only calls `ctx.provider.reload()` when the model list actually changed, so a low interval is cheap.
+
+**The plugin fails to load entirely.**
+- Run `npm run build` and confirm `dist/index.js` exists.
+- Check the `package` URL in your `opencode.jsonc` — it must be a `file://` URL pointing at the plugin **directory**, not the `dist/index.js` file.
+- After rebuilds, run `opencode service restart` so the background server picks up the new code.
+
+## Development
+
+```
+opencode-custom-provider/
+├── package.json              # npm package metadata; @opencode/plugin peer dep
+├── tsconfig.json             # ESNext / strict / outDir=dist / rootDir=src
+├── opencode.example.jsonc    # full worked config example
+├── src/
+│   ├── index.ts              # Plugin.define entry — transform + refresh + cleanup
+│   ├── types.ts              # PluginOptions + per-backend response shapes
+│   ├── backends.ts           # static descriptors (id, displayName, defaults, prefix rules)
+│   ├── capabilities.ts       # name-pattern heuristics + mergeCapabilities()
+│   ├── discovery.ts          # fetchJSON + discoverLlamaCpp/LiteLLM/WorkBuddyWild
+│   └── normalize.ts          # toModelInfo / toProviderRecord → Model.Info / Provider.Info
+├── dist/                     # built output (committed for local file:// use)
+└── README.md
+```
+
+Build & type-check:
+
+```bash
+npm run build        # tsc → dist/
+npx tsc --noEmit     # type-check only
+```
+
+The plugin uses the OpenCode V2 `Plugin.define` + `ctx.provider.transform` API. The setup function:
+1. Reads options from `ctx.options`.
+2. Calls `discoverAll(opts)` — one `DiscoveredProvider` per enabled backend, with failures becoming offline records (not exceptions).
+3. `ctx.provider.transform(editor => { for each online backend: editor.add({ info, models }) })`.
+4. Schedules `setInterval` to re-discover and call `ctx.provider.reload()` only when the model list changed.
+5. Returns a cleanup function that clears the interval.
+
+Capability precedence, highest to lowest:
+1. Extended-endpoint metadata (`/props`, `model_info`, `context_length`/`max_output_tokens`).
+2. Name-pattern heuristics (`capabilities.ts`).
+3. OpenCode `Model.Info.default()` (tools=true, input=[text,image], output=[text], ctx=200K, output=32K).
+
+## License
+
+MIT
