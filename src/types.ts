@@ -12,7 +12,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// Plugin options (opencode.jsonc → plugins[].options)
+// Plugin options (opencode.jsonc → plugin tuple `[[spec, options]]`)
 // ---------------------------------------------------------------------------
 
 export type BackendID = "llama-cpp" | "litellm" | "workbuddy-wild";
@@ -30,11 +30,18 @@ export interface BackendConfig {
   headers?: Record<string, string>;
   /** (litellm only) Include models whose mode is not "chat". Default: false. */
   includeNonChat?: boolean;
+  /**
+   * Field in each streamed chat delta that carries reasoning/thinking tokens.
+   * Defaults to "reasoning_content". opencode aggregates reasoning into a
+   * single block only when this matches the backend's actual streaming field;
+   * a mismatch (or leaving it unset for a reasoning model) makes every delta
+   * render as its own "Thought" block. Set it if your backend uses a
+   * different field (e.g. "reasoning", "reasoning_text", "thinking").
+   */
+  reasoningField?: string;
 }
 
 export interface PluginOptions {
-  /** Refresh interval in milliseconds. Default: 300_000 (5 minutes). */
-  refreshIntervalMs?: number;
   /** Per-backend configuration. Keys not present are treated as disabled. */
   backends?: Partial<Record<BackendID, BackendConfig>>;
 }
@@ -177,5 +184,7 @@ export interface DiscoveredProvider {
   modelIds: string[];
   /** Per-model extended metadata, keyed by model ID. */
   extended: Record<string, ExtendedModelInfo>;
+  /** Streamed-delta field carrying reasoning tokens (for opencode aggregation). */
+  reasoningField: string;
 }
 

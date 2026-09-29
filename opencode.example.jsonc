@@ -1,27 +1,37 @@
 ﻿{
-  // Example OpenCode V2 config wiring up the opencode-localcat plugin.
+  // Example opencode 1.x config wiring up the opencode-localcat plugin.
   // Drop this (or merge relevant fields) into:
   //   - ~/.config/opencode/opencode.jsonc   (global)
   //   - .opencode/opencode.jsonc            (project)
   // Then run `opencode` and use /providers and /models to verify discovery.
+  //
+  // `plugin` is an array of specs. A spec is either a string or a
+  // `[spec, options]` tuple. A plugin is referenced by package name
+  // ("opencode-localcat") or by a path/URL to its built entry
+  // (dist/index.js) — relative ("./..."), absolute ("/..."), or file:// URL
+  // all work. A `file://` prefix is NOT required.
 
   "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      // Use a file:// URL so OpenCode loads the plugin from the local build.
-      // After `npm run build` in d:\Code\opencode-localcat, dist/index.js exists.
-      "package": "file:///d:/Code/opencode-localcat",
-      "options": {
-        // How often to re-fetch /v1/models from each backend. Default: 5 minutes.
-        "refreshIntervalMs": 300000,
-
+  "plugin": [
+    [
+      "file:///path/to/opencode-localcat/dist/index.js",
+      {
         // Per-backend config. Each backend supports:
         //   baseURL          (required when enabled)  e.g. "http://127.0.0.1:8080/v1"
         //   apiKey           (optional)                bearer token; "no-key-required" if omitted
         //   enabled          (optional, default true)  set false to skip a backend
         //   timeoutMs        (optional, default 5000)  per-request timeout for /v1/models and /props
         //   headers          (optional)                extra HTTP headers merged onto every request
+        //   reasoningField   (optional, default "reasoning_content")
+        //                                                  field in each streamed delta carrying reasoning
+        //                                                  tokens — set it to the backend's actual key
+        //                                                  (e.g. "reasoning", "thinking") so opencode
+        //                                                  aggregates reasoning into one block
         //   includeNonChat   (optional, litellm only)  include embedding/completion models in the list
+        //
+        // Discovery runs once when opencode loads its config. The 1.x plugin
+        // API has no live-reload hook, so restart opencode to pick up newly
+        // added backend models.
         "backends": {
           "llama-cpp": {
             "enabled": true,
@@ -46,7 +56,6 @@
           }
         }
       }
-    }
+    ]
   ]
 }
-

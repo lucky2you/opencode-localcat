@@ -1,7 +1,7 @@
 ﻿{
   "name": "opencode-localcat",
   "version": "0.1.0",
-  "description": "OpenCode V2 plugin that auto-discovers models from llama.cpp, litellm, and workbuddy-wild backends with full capability metadata.",
+  "description": "OpenCode plugin that auto-discovers models from llama.cpp, litellm, and workbuddy-wild backends with full capability metadata.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,9 +14,6 @@
     "build": "tsc",
     "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
     "prepublishOnly": "npm run build"
-  },
-  "peerDependencies": {
-    "@opencode/plugin": "*"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

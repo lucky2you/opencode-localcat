@@ -5,9 +5,9 @@
  * lives in discovery.ts; this file just gives the plugin a stable identity
  * (display name, default port, OpenAI-compatible package) per backend.
  *
- * The `package` field must be `@opencode/ai/providers/openai-compatible` for
- * all three backends, because llama.cpp, litellm, and workbuddy-wild all
- * speak the OpenAI Chat Completions protocol on `/v1/chat/completions`.
+ * The `package` field must be `@ai-sdk/openai-compatible` for all three
+ * backends, because llama.cpp, litellm, and workbuddy-wild all speak the
+ * OpenAI Chat Completions protocol on `/v1/chat/completions`.
  */
 
 import type { BackendConfig, BackendID } from "./types.js";
@@ -26,6 +26,8 @@ export interface BackendDescriptor {
   packageName: string;
   /** Whether this backend requires a non-trivial apiKey (workbuddy-wild enforces it; llama.cpp typically doesn't). */
   requiresApiKey: boolean;
+  /** Default streamed-delta field carrying reasoning tokens. Overridable per backend via options.reasoningField. */
+  reasoningField: string;
 }
 
 export const BACKENDS: readonly BackendDescriptor[] = [
@@ -35,8 +37,9 @@ export const BACKENDS: readonly BackendDescriptor[] = [
     defaultPort: 8080,
     defaultBaseURL: "http://127.0.0.1:8080/v1",
     defaultApiKey: "no-key-required",
-    packageName: "@opencode/ai/providers/openai-compatible",
+    packageName: "@ai-sdk/openai-compatible",
     requiresApiKey: false,
+    reasoningField: "reasoning_content",
   },
   {
     id: "litellm",
@@ -44,8 +47,9 @@ export const BACKENDS: readonly BackendDescriptor[] = [
     defaultPort: 4000,
     defaultBaseURL: "http://127.0.0.1:4000/v1",
     defaultApiKey: "sk-litellm-proxy",
-    packageName: "@opencode/ai/providers/openai-compatible",
+    packageName: "@ai-sdk/openai-compatible",
     requiresApiKey: true,
+    reasoningField: "reasoning_content",
   },
   {
     id: "workbuddy-wild",
@@ -53,8 +57,9 @@ export const BACKENDS: readonly BackendDescriptor[] = [
     defaultPort: 7863,
     defaultBaseURL: "http://127.0.0.1:7863/v1",
     defaultApiKey: "WorkBuddy2API",
-    packageName: "@opencode/ai/providers/openai-compatible",
+    packageName: "@ai-sdk/openai-compatible",
     requiresApiKey: true,
+    reasoningField: "reasoning_content",
   },
 ] as const;
 
@@ -75,13 +80,14 @@ export function getBackend(id: BackendID): BackendDescriptor {
 export function resolveConfig(
   descriptor: BackendDescriptor,
   raw: BackendConfig | undefined,
-): BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number } {
+): BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string } {
   const baseURL = (raw?.baseURL ?? descriptor.defaultBaseURL).replace(/\/+$/, "");
   const apiKey = raw?.apiKey ?? descriptor.defaultApiKey;
   const timeoutMs = raw?.timeoutMs ?? 5_000;
   const enabled = raw?.enabled ?? true;
   const headers = raw?.headers;
-  return { baseURL, apiKey, enabled, timeoutMs, headers };
+  const reasoningField = raw?.reasoningField ?? descriptor.reasoningField;
+  return { baseURL, apiKey, enabled, timeoutMs, headers, reasoningField };
 }
 
 /**

@@ -1,12 +1,12 @@
 /**
- * Discovery module — fetches /v1/models from each backend and, where the
+ * Discovery module �?fetches /v1/models from each backend and, where the
  * backend exposes extra metadata (llama.cpp /props, litellm model_info,
  * workbuddy-wild inline context_length/max_output_tokens), reads it and
  * folds it into a NormalizedCapabilities + NormalizedLimits block per model.
  *
  * Every external call is wrapped in try/catch and a per-request timeout.
  * A failed backend produces an offline DiscoveredProvider with online=false
- * rather than throwing — the plugin's setup() still registers the other two.
+ * rather than throwing �?the plugin's setup() still registers the other two.
  */
 
 import { getBackend, hasWorkBuddyPrefix, resolveConfig } from "./backends.js";
@@ -96,10 +96,10 @@ export class TimeoutError extends Error {
 
 /**
  * Discover all enabled backends. Returns one DiscoveredProvider per backend,
- * regardless of whether it succeeded — failures become offline records.
+ * regardless of whether it succeeded �?failures become offline records.
  *
  * Backends are fetched sequentially in the order they're declared in BACKENDS
- * (llama-cpp → litellm → workbuddy-wild). We could parallelize with
+ * (llama-cpp �?litellm �?workbuddy-wild). We could parallelize with
  * Promise.all, but the per-backend calls are independent and small enough
  * that the added complexity isn't worth it; sequential also makes the
  * warning log easier to read when several backends are down.
@@ -116,7 +116,7 @@ export async function discoverAll(
     const raw = options.backends?.[id];
     const cfg = resolveConfig(descriptor, raw);
     if (!cfg.enabled) {
-      // Skip silently — user explicitly disabled it.
+      // Skip silently �?user explicitly disabled it.
       continue;
     }
     try {
@@ -134,6 +134,7 @@ export async function discoverAll(
         apiKey: cfg.apiKey,
         modelIds: [],
         extended: {},
+        reasoningField: cfg.reasoningField,
       });
     }
   }
@@ -146,7 +147,7 @@ export async function discoverAll(
 
 async function discoverBackend(
   id: BackendID,
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string },
 ): Promise<DiscoveredProvider> {
   switch (id) {
     case "llama-cpp":
@@ -163,7 +164,7 @@ async function discoverBackend(
 // ---------------------------------------------------------------------------
 
 async function discoverLlamaCpp(
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string },
 ): Promise<DiscoveredProvider> {
   const descriptor = getBackend("llama-cpp");
   // /v1/models returns OpenAI-shaped list. We strip /v1 suffix because some
@@ -181,7 +182,7 @@ async function discoverLlamaCpp(
   const extended: Record<string, ExtendedModelInfo> = {};
 
   // Best-effort: fetch /props once per model. Each call gets a tighter
-  // 1.5s timeout (autoload=0 means we don't actually load the model — fast).
+  // 1.5s timeout (autoload=0 means we don't actually load the model �?fast).
   // Failures here are non-fatal: we just fall back to name heuristics.
   const probeTimeout = Math.min(1500, cfg.timeoutMs);
 
@@ -196,10 +197,10 @@ async function discoverLlamaCpp(
       );
       extended[m.id] = extendLlamaCpp(m, props.body);
     } catch (err) {
-      // Probe failure is fine — fall back to inline meta + name heuristics.
+      // Probe failure is fine �?fall back to inline meta + name heuristics.
       extended[m.id] = extendLlamaCpp(m, undefined);
       if (!(err instanceof HttpError && err.status === 404)) {
-        // Don't log 404s — expected on older llama.cpp builds without /props.
+        // Don't log 404s �?expected on older llama.cpp builds without /props.
         console.warn(`[local-models] llama-cpp /props probe failed for ${m.id}: ${(err as Error).message}`);
       }
     }
@@ -213,6 +214,7 @@ async function discoverLlamaCpp(
     apiKey: cfg.apiKey,
     modelIds: list.body.data?.map((m) => m.id).filter(Boolean) ?? [],
     extended,
+    reasoningField: cfg.reasoningField,
   };
 }
 
@@ -279,7 +281,7 @@ function extendLlamaCpp(model: OpenAIModel, props: LlamaCppPropsResponse | undef
   if (modalities && modalities.includes("image") && !caps.input.includes("image")) {
     caps.input.push("image");
   }
-  // Thinking detection from chat_template — same markers llama.cpp itself keys on.
+  // Thinking detection from chat_template �?same markers llama.cpp itself keys on.
   const template = dgs?.chat_template;
   if (template) {
     const THINKING_MARKERS = [
@@ -306,7 +308,7 @@ function extendLlamaCpp(model: OpenAIModel, props: LlamaCppPropsResponse | undef
 // ---------------------------------------------------------------------------
 
 async function discoverLiteLLM(
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; includeNonChat?: boolean },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; includeNonChat?: boolean; reasoningField: string },
 ): Promise<DiscoveredProvider> {
   const descriptor = getBackend("litellm");
   const url = joinURL(cfg.baseURL, "/models");
@@ -342,6 +344,7 @@ async function discoverLiteLLM(
     apiKey: cfg.apiKey,
     modelIds: acceptedIds,
     extended,
+    reasoningField: cfg.reasoningField,
   };
 }
 
@@ -432,7 +435,7 @@ function normalizeModalities(arr: string[] | undefined): string[] {
 // ---------------------------------------------------------------------------
 
 async function discoverWorkBuddyWild(
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string },
 ): Promise<DiscoveredProvider> {
   const descriptor = getBackend("workbuddy-wild");
   const url = joinURL(cfg.baseURL, "/models");
@@ -460,6 +463,7 @@ async function discoverWorkBuddyWild(
     apiKey: cfg.apiKey,
     modelIds: acceptedIds,
     extended,
+    reasoningField: cfg.reasoningField,
   };
 }
 
@@ -496,7 +500,7 @@ function joinURL(base: string, path: string): string {
   const cleanBase = base.replace(/\/+$/, "");
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   if (cleanBase.endsWith(cleanPath)) return cleanBase;
-  // Handle the case where base is "http://x/v1" and path is "/models" → "http://x/v1/models".
+  // Handle the case where base is "http://x/v1" and path is "/models" �?"http://x/v1/models".
   // Also handle "http://x" + "/v1/models".
   return `${cleanBase}${cleanPath}`;
 }
@@ -543,7 +547,7 @@ function scanNumericFlag(args: string[], flags: string[]): number | undefined {
 
 /**
  * Read n_predict from default_generation_settings. The field can be a number
- * or null (older llama.cpp builds). We do NOT use n_batch here — that's the
+ * or null (older llama.cpp builds). We do NOT use n_batch here �?that's the
  * batch size, not the output cap.
  */
 function scanNumericFlagFromSettings(dgs: NonNullable<LlamaCppPropsResponse["default_generation_settings"]>): number | undefined {
@@ -551,3 +555,4 @@ function scanNumericFlagFromSettings(dgs: NonNullable<LlamaCppPropsResponse["def
   if (typeof v === "number" && v > 0) return v;
   return undefined;
 }
+

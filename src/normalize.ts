@@ -1,119 +1,143 @@
 /**
  * Normalization: convert each backend's raw + extended metadata into the
- * OpenCode V2 `Model.Info` shape that `ctx.provider.transform` expects.
+ * opencode `provider.<id>` config block shape used by the 1.x plugin API.
  *
  * Capability precedence (highest to lowest):
  *   1. Extended-endpoint metadata (llama.cpp /props, litellm model_info,
  *      workbuddy-wild context_length/max_output_tokens) — produced by discovery.ts.
  *   2. Name-pattern heuristics — capabilities.ts.
- *   3. OpenCode Model.Info.default() — the framework's own assumptions
- *      (tools=true, input/output=[text], ctx=200K, output=32K).
+ *   3. opencode's own defaults for unknown models (ctx=200K, output=32K, tools on).
  *
  * For limit fields (context/output/input), extended metadata wins outright
- * when present; otherwise we fall through to OpenCode's default. We never
- * let a heuristic *reduce* a known-good value below the framework default.
+ * when present; otherwise we fall through to opencode's default.
  */
-
-import { Model, Provider } from "@opencode/plugin";
 
 import { getBackend } from "./backends.js";
 import { DEFAULT_CAPABILITIES, inferCapabilities, mergeCapabilities } from "./capabilities.js";
-import type { DiscoveredProvider, ExtendedModelInfo } from "./types.js";
+import type { DiscoveredProvider } from "./types.js";
 
-/**
- * Build a complete Model.Info for one discovered model. Returns `null` if the
- * model id is empty or the backend is offline (caller should skip).
- */
-export function toModelInfo(
+/** opencode's fallback assumptions for an unknown model. */
+const DEFAULT_CONTEXT = 200_000;
+const DEFAULT_OUTPUT = 32_000;
+
+/** Per-model entry inside `provider.<id>.models`. */
+export interface ConfigModel {
+  name?: string;
+  /** Model accepts non-text input (images/pdf/audio) as attachments. */
+  attachment?: boolean;
+  /** Model emits reasoning traces. */
+  reasoning?: boolean;
+  /**
+   * Where interleaved reasoning tokens live in each streamed delta. The
+   * workbuddy-wild backend puts them in `reasoning_content` (not the
+   * OpenAI-default `reasoning`), so we must declare it explicitly.
+   * Without this, opencode falls back to a default that renders each
+   * reasoning delta as its own block instead of one aggregated block.
+   */
+  interleaved?: "reasoning" | "reasoning_content" | "reasoning_text" | string;
+  /** Model supports tool/function calling. */
+  tool_call?: boolean;
+  limit: {
+    context: number;
+    output: number;
+    input?: number;
+  };
+}
+
+/** `provider.<id>` config block. */
+export interface ConfigProvider {
+  name: string;
+  /** npm package opencode uses to talk to this provider. */
+  npm: string;
+  options: {
+    baseURL: string;
+    apiKey?: string;
+  };
+  models: Record<string, ConfigModel>;
+}
+
+/** Build the config entry for a single discovered model (null if id is empty). */
+export function toModelConfig(
   backend: DiscoveredProvider,
   modelID: string,
-): Model.Info | null {
+): ConfigModel | null {
   if (!modelID) return null;
 
   const descriptor = getBackend(backend.id);
-  const providerID = Provider.ID.make(descriptor.id);
-  const id = Model.ID.make(modelID);
-  const base = Model.Info.default(providerID, id);
-
-  const ext: ExtendedModelInfo | undefined = backend.extended[modelID];
+  const ext = backend.extended[modelID];
   const heuristic = inferCapabilities(modelID);
 
   // Capabilities: extended metadata overrides heuristic field-by-field.
-  // If the backend exposed a tools=boolean, we trust it; if it left it
-  // undefined, fall back to the heuristic (which itself falls back to
-  // DEFAULT_CAPABILITIES for ambiguous fields).
-  const caps = ext
-    ? mergeCapabilities(heuristic, ext.capabilities)
-    : heuristic;
+  const caps = ext ? mergeCapabilities(heuristic, ext.capabilities) : heuristic;
 
-  // Limits: extended metadata wins outright when >0; otherwise default.
-  const defaultCtx = base.limit?.context ?? 200_000;
-  const defaultOutput = base.limit?.output ?? 32_000;
-  const limits = {
-    context: ext?.limits.context && ext.limits.context > 0 ? ext.limits.context : defaultCtx,
-    output: ext?.limits.output && ext.limits.output > 0 ? ext.limits.output : defaultOutput,
-    ...(ext?.limits.input && ext.limits.input > 0 ? { input: ext.limits.input } : {}),
-  };
+  // Limits: extended metadata wins outright when > 0; otherwise default.
+  const context = positive(ext?.limits.context) ?? DEFAULT_CONTEXT;
+  const output = Math.min(positive(ext?.limits.output) ?? DEFAULT_OUTPUT, context);
+  const limit: ConfigModel["limit"] = { context, output };
+  const input = positive(ext?.limits.input);
+  if (input !== undefined) limit.input = Math.min(input, context);
 
-  // Display name: prefer the leaf of the id (after `workbuddy/` etc.) plus
-  // the backend's display name in parens, so /models shows e.g.
-  // "hy3 (WorkBuddy-Wild)" rather than a raw "workbuddy/hy3".
-  const leaf = modelID.includes("/") ? modelID.split("/").slice(-1)[0] : modelID;
-  const name = `${leaf} (${descriptor.displayName})`;
+  // Display name: for workbuddy-wild we keep the full id (with its
+  // required `workbuddy/` or `traework/` prefix) so it matches the server's
+  // id, e.g. "workbuddy/hy3". For other backends we use the leaf of the id
+  // plus the backend's display name in parens, e.g. "hy3 (LiteLLM)".
+  const name =
+    descriptor.id === "workbuddy-wild"
+      ? modelID
+      : (() => {
+          const leaf = modelID.includes("/") ? modelID.split("/").slice(-1)[0] ?? modelID : modelID;
+          return `${leaf} (${descriptor.displayName})`;
+        })();
 
-  const out: Model.Info = {
-    ...base,
+  return {
     name,
-    capabilities: {
-      tools: caps.tools,
-      input: caps.input,
-      output: caps.output,
-    },
-    limit: limits,
+    attachment: caps.input.some((m) => m !== "text"),
+    reasoning: caps.reasoning,
+    // Tell opencode where each backend actually streams its reasoning tokens.
+    // Without this, opencode can't aggregate the trace and renders every
+    // streamed delta as its own "Thought" block — the per-token spam reported.
+    //
+    // We set `interleaved` for EVERY model of a backend that declares a
+    // reasoningField, not only those flagged `reasoning`. Rationale: the
+    // capability heuristics under-detect reasoning (e.g. most workbuddy-wild
+    // and many litellm models stream `reasoning_content` but aren't on the
+    // name-pattern whitelist), so gating on `caps.reasoning` leaves those
+    // models un-aggregated. A false positive here is harmless — if the model
+    // doesn't emit reasoning, the field is simply absent and opencode ignores
+    // it. A false negative, by contrast, is the exact bug we're fixing.
+    interleaved: backend.reasoningField || undefined,
+    tool_call: caps.tools,
+    limit,
   };
-
-  // If the model is reasoning-capable, surface it as an extra capability flag.
-  // OpenCode V2 Model.Info doesn't have a dedicated `reasoning` field today,
-  // but we still want to influence tool routing — reasoning models with weak
-  // tool support should not be force-fed function calls. Conservative: leave
-  // tools on unless the heuristic explicitly turned them off.
-  if (caps.reasoning && !caps.tools) {
-    // Already reflected in caps.tools.
-  }
-
-  return out;
 }
 
 /**
- * Convert a full DiscoveredProvider into an OpenCode V2 Provider.Info +
- * a readonly list of Model.Info. Used by setup() to call editor.add().
+ * Convert a full DiscoveredProvider into a `provider.<id>` config block.
+ * Callers should only invoke this for online backends with at least one model.
  */
-export function toProviderRecord(
-  backend: DiscoveredProvider,
-): { info: Provider.Info; models: Model.Info[] } {
+export function toProviderConfig(backend: DiscoveredProvider): ConfigProvider {
   const descriptor = getBackend(backend.id);
-  const providerID = Provider.ID.make(descriptor.id);
 
-  const info: Provider.Info = {
-    ...Provider.Info.empty(providerID),
-    name: backend.displayName,
-    // "enabled" makes the provider show up in /providers without the user
-    // having to enable it manually; "automatic" would hide it until toggled.
-    activation: "enabled",
-    package: descriptor.packageName,
-    settings: {
-      baseURL: backend.baseURL,
-      apiKey: backend.apiKey,
-    },
-  };
-
-  const models: Model.Info[] = [];
+  const models: Record<string, ConfigModel> = {};
   for (const id of backend.modelIds) {
-    const m = toModelInfo(backend, id);
-    if (m) models.push(m);
+    const m = toModelConfig(backend, id);
+    if (m) models[id] = m;
   }
 
-  return { info, models };
+  const options: ConfigProvider["options"] = { baseURL: backend.baseURL };
+  if (backend.apiKey) options.apiKey = backend.apiKey;
+
+  return {
+    name: descriptor.displayName,
+    npm: descriptor.packageName,
+    options,
+    models,
+  };
+}
+
+/** Return n only when it is a positive finite number. */
+function positive(n: number | undefined): number | undefined {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 /** Re-export for callers that just want the default-capabilities reference. */
