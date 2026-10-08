@@ -17,10 +17,27 @@ import type {
   ExtendedModelInfo,
   LiteLLMModelInfo,
   LlamaCppPropsResponse,
+  ModelOverride,
   ModelsListResponse,
   NormalizedCapabilities,
   OpenAIModel,
 } from "./types.js";
+
+/**
+ * Extract per-model reasoning field overrides from user config.
+ * Returns a map of model ID → field name, filtering out entries
+ * that don't set `reasoningField`.
+ */
+function buildModelOverrides(
+  models?: Record<string, ModelOverride>,
+): Record<string, string> | undefined {
+  if (!models) return undefined;
+  const out: Record<string, string> = {};
+  for (const [id, ov] of Object.entries(models)) {
+    if (ov?.reasoningField) out[id] = ov.reasoningField;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helper
@@ -135,6 +152,7 @@ export async function discoverAll(
         modelIds: [],
         extended: {},
         reasoningField: cfg.reasoningField,
+        modelOverrides: buildModelOverrides(cfg.models),
       });
     }
   }
@@ -147,7 +165,7 @@ export async function discoverAll(
 
 async function discoverBackend(
   id: BackendID,
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string; models?: Record<string, ModelOverride> },
 ): Promise<DiscoveredProvider> {
   switch (id) {
     case "llama-cpp":
@@ -164,7 +182,7 @@ async function discoverBackend(
 // ---------------------------------------------------------------------------
 
 async function discoverLlamaCpp(
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string; models?: Record<string, ModelOverride> },
 ): Promise<DiscoveredProvider> {
   const descriptor = getBackend("llama-cpp");
   // /v1/models returns OpenAI-shaped list. We strip /v1 suffix because some
@@ -215,6 +233,7 @@ async function discoverLlamaCpp(
     modelIds: list.body.data?.map((m) => m.id).filter(Boolean) ?? [],
     extended,
     reasoningField: cfg.reasoningField,
+    modelOverrides: buildModelOverrides(cfg.models),
   };
 }
 
@@ -308,7 +327,7 @@ function extendLlamaCpp(model: OpenAIModel, props: LlamaCppPropsResponse | undef
 // ---------------------------------------------------------------------------
 
 async function discoverLiteLLM(
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; includeNonChat?: boolean; reasoningField: string },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; includeNonChat?: boolean; reasoningField: string; models?: Record<string, ModelOverride> },
 ): Promise<DiscoveredProvider> {
   const descriptor = getBackend("litellm");
   const url = joinURL(cfg.baseURL, "/models");
@@ -345,6 +364,7 @@ async function discoverLiteLLM(
     modelIds: acceptedIds,
     extended,
     reasoningField: cfg.reasoningField,
+    modelOverrides: buildModelOverrides(cfg.models),
   };
 }
 
@@ -435,7 +455,7 @@ function normalizeModalities(arr: string[] | undefined): string[] {
 // ---------------------------------------------------------------------------
 
 async function discoverWorkBuddyWild(
-  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string },
+  cfg: BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string; models?: Record<string, ModelOverride> },
 ): Promise<DiscoveredProvider> {
   const descriptor = getBackend("workbuddy-wild");
   const url = joinURL(cfg.baseURL, "/models");
@@ -464,6 +484,7 @@ async function discoverWorkBuddyWild(
     modelIds: acceptedIds,
     extended,
     reasoningField: cfg.reasoningField,
+    modelOverrides: buildModelOverrides(cfg.models),
   };
 }
 

@@ -10,7 +10,7 @@
  * OpenAI Chat Completions protocol on `/v1/chat/completions`.
  */
 
-import type { BackendConfig, BackendID } from "./types.js";
+import type { BackendConfig, BackendID, ModelOverride } from "./types.js";
 
 export interface BackendDescriptor {
   id: BackendID;
@@ -80,14 +80,15 @@ export function getBackend(id: BackendID): BackendDescriptor {
 export function resolveConfig(
   descriptor: BackendDescriptor,
   raw: BackendConfig | undefined,
-): BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string } {
+): BackendConfig & { baseURL: string; apiKey: string; timeoutMs: number; reasoningField: string; models?: Record<string, ModelOverride> } {
   const baseURL = (raw?.baseURL ?? descriptor.defaultBaseURL).replace(/\/+$/, "");
   const apiKey = raw?.apiKey ?? descriptor.defaultApiKey;
   const timeoutMs = raw?.timeoutMs ?? 5_000;
   const enabled = raw?.enabled ?? true;
   const headers = raw?.headers;
   const reasoningField = raw?.reasoningField ?? descriptor.reasoningField;
-  return { baseURL, apiKey, enabled, timeoutMs, headers, reasoningField };
+  const models = raw?.models;
+  return { baseURL, apiKey, enabled, timeoutMs, headers, reasoningField, models };
 }
 
 /**

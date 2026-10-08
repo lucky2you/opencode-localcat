@@ -110,7 +110,8 @@ All options live under the plugin tuple's second element in `opencode.jsonc` (i.
 | `backends.<id>.enabled` | `boolean` | `true` | Set `false` to skip a backend without removing its config block. |
 | `backends.<id>.timeoutMs` | `number` | `5000` | Per-request timeout for `/v1/models` and any extended endpoints. |
 | `backends.<id>.headers` | `object` | `{}` | Extra HTTP headers merged onto every discovery request. |
-| `backends.<id>.reasoningField` | `string` | `"reasoning_content"` | Field in each streamed chat delta carrying reasoning tokens. Set it to the exact field your backend streams thinking under (e.g. `"reasoning"`, `"reasoning_text"`, `"thinking"`) so opencode aggregates the trace into one block instead of rendering each token as a separate "Thought" block. Applied to **every** model of a reasoning-capable backend; harmless for non-reasoning models. |
+| `backends.<id>.reasoningField` | `string` | `"reasoning_content"` | Field in each streamed chat delta carrying reasoning tokens. Set it to the exact field your backend streams thinking under (e.g. `"reasoning"`, `"reasoning_text"`, `"thinking"`) so opencode aggregates the trace into one block instead of rendering each token as a separate "Thought" block. Applied to **every** model of a reasoning-capable backend; harmless for non-reasoning models. Override per-model via `backends.<id>.models.<modelID>.reasoningField`. |
+| `backends.<id>.models.<modelID>.reasoningField` | `string` | *(inherits backend default)* | Per-model override of the reasoning field. Use when different models on the same backend stream reasoning under different field names. Unknown model IDs are ignored. |
 | `backends.litellm.includeNonChat` | `boolean` | `false` | Include models whose `mode` is `embedding`/`completion`/etc. in the list. |
 
 ## Per-backend notes
@@ -151,9 +152,13 @@ All options live under the plugin tuple's second element in `opencode.jsonc` (i.
 
 **Reasoning/thinking renders as one block per token (lots of tiny `Thought` lines).**
 - This is the opencode symptom of a *reasoning-field mismatch*, not a TUI quirk. The generic `@ai-sdk/openai-compatible` provider aggregates reasoning into a single block only when the model's `interleaved` points at the **exact field the backend streams thinking under**. If that field is wrong, or a reasoning model isn't told where to look, every delta renders as its own block.
-- The plugin now sets `interleaved` to `backends.<id>.reasoningField` (default `"reasoning_content"`, which is what workbuddy-wild uses — verified live) for **every** model of a reasoning-capable backend. If your backend uses a different streamed field (e.g. `"reasoning"`, `"reasoning_text"`, `"thinking"`), override it:
+- The plugin sets `interleaved` to `backends.<id>.reasoningField` (default `"reasoning_content"`) for **every** model of a reasoning-capable backend. If your backend uses a different streamed field (e.g. `"reasoning"`, `"reasoning_text"`, `"thinking"`), override it:
   ```jsonc
   { "plugin": [["opencode-localcat", { "backends": { "workbuddy-wild": { "reasoningField": "reasoning" } } }]] }
+  ```
+- Different models on the same backend may stream reasoning under different field names. Override per-model:
+  ```jsonc
+  { "plugin": [["opencode-localcat", { "backends": { "workbuddy-wild": { "models": { "workbuddy/hy3": { "reasoningField": "reasoning_content" }, "workbuddy/other": { "reasoningField": "reasoning" } } } } }]] }
   ```
 - To confirm the streamed field yourself, watch the raw SSE: `curl -N -X POST <baseURL>/chat/completions -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -d '{"model":"<id>","stream":true,"messages":[{"role":"user","content":"hi"}]}'` and look at which key inside each `delta` carries the thinking text.
 

@@ -93,6 +93,11 @@ export function toModelConfig(
           return `${leaf} (${descriptor.displayName})`;
         })();
 
+  // Per-model override: different models on the same backend may stream
+  // reasoning under different field names. Check `modelOverrides[modelID]`
+  // first, then fall back to the backend-level `reasoningField`.
+  const reasoningField = backend.modelOverrides?.[modelID] ?? backend.reasoningField;
+
   return {
     name,
     attachment: caps.input.some((m) => m !== "text"),
@@ -115,7 +120,7 @@ export function toModelConfig(
     // `interleaved` is an object with a `field` key; a bare string is accepted
     // by the JSON schema but does not trigger aggregation, causing each
     // streamed reasoning delta to render as its own "Thought" block.
-    interleaved: backend.reasoningField ? { field: backend.reasoningField } : undefined,
+    interleaved: reasoningField ? { field: reasoningField } : undefined,
     tool_call: caps.tools,
     limit,
   };

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Type definitions for the opencode-localcat plugin.
  *
  * These describe the shape of plugin options in opencode.jsonc and the
@@ -37,6 +37,26 @@ export interface BackendConfig {
    * a mismatch (or leaving it unset for a reasoning model) makes every delta
    * render as its own "Thought" block. Set it if your backend uses a
    * different field (e.g. "reasoning", "reasoning_text", "thinking").
+   *
+   * This is the backend-wide default. Use `models.<id>.reasoningField` to
+   * override per-model when different models on the same backend stream
+   * reasoning under different field names.
+   */
+  reasoningField?: string;
+  /**
+   * Per-model overrides keyed by model ID. Each entry can set
+   * `reasoningField` to override the backend-level default for that
+   * specific model. Unknown model IDs are ignored.
+   */
+  models?: Record<string, ModelOverride>;
+}
+
+export interface ModelOverride {
+  /**
+   * Override the backend's `reasoningField` for this specific model.
+   * Use when the model streams reasoning tokens under a different
+   * field name than the backend default (e.g. "reasoning" instead of
+   * "reasoning_content").
    */
   reasoningField?: string;
 }
@@ -186,5 +206,7 @@ export interface DiscoveredProvider {
   extended: Record<string, ExtendedModelInfo>;
   /** Streamed-delta field carrying reasoning tokens (for opencode aggregation). */
   reasoningField: string;
+  /** Per-model reasoning field overrides (model ID → field name). */
+  modelOverrides?: Record<string, string>;
 }
 
