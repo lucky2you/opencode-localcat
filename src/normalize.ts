@@ -33,8 +33,12 @@ export interface ConfigModel {
    * OpenAI-default `reasoning`), so we must declare it explicitly.
    * Without this, opencode falls back to a default that renders each
    * reasoning delta as its own block instead of one aggregated block.
+   *
+   * Must use the object form `{ field: "reasoning_content" }`; the bare
+   * string form is accepted by the JSON schema but does not trigger
+   * aggregation in the opencode runtime.
    */
-  interleaved?: "reasoning" | "reasoning_content" | "reasoning_text" | string;
+  interleaved?: { field: string };
   /** Model supports tool/function calling. */
   tool_call?: boolean;
   limit: {
@@ -105,7 +109,13 @@ export function toModelConfig(
     // models un-aggregated. A false positive here is harmless — if the model
     // doesn't emit reasoning, the field is simply absent and opencode ignores
     // it. A false negative, by contrast, is the exact bug we're fixing.
-    interleaved: backend.reasoningField || undefined,
+    //
+    // The value MUST be the object form { field: "..." }, not a bare string.
+    // opencode's runtime only aggregates reasoning into a single block when
+    // `interleaved` is an object with a `field` key; a bare string is accepted
+    // by the JSON schema but does not trigger aggregation, causing each
+    // streamed reasoning delta to render as its own "Thought" block.
+    interleaved: backend.reasoningField ? { field: backend.reasoningField } : undefined,
     tool_call: caps.tools,
     limit,
   };
