@@ -165,8 +165,13 @@ export interface NormalizedCapabilities {
   input: string[];
   /** Modalities the model can produce as output: subset of "text","image","audio". */
   output: string[];
-  /** Whether the model emits reasoning traces (e.g. R1/o1/Qwen3 thinking). */
-  reasoning: boolean;
+  /**
+   * Whether the model emits reasoning traces (e.g. R1/o1/Qwen3 thinking).
+   * Optional so backends that don't expose the flag (workbuddy-wild) can
+   * leave it UNKNOWN; the merge in normalize.ts then falls through to the
+   * name-pattern heuristic instead of forcing an explicit `false`.
+   */
+  reasoning?: boolean;
 }
 
 export interface NormalizedLimits {

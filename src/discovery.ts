@@ -496,14 +496,16 @@ function extendWorkBuddyWild(model: OpenAIModel): ExtendedModelInfo {
     ? model.max_output_tokens
     : Math.min(32_000, context);
 
-  // workbuddy-wild doesn't expose supports_* flags, so capabilities fall
-  // through to name heuristics in normalize.ts.
+  // workbuddy-wild doesn't expose supports_* flags, so capability booleans
+  // (esp. `reasoning`) are UNKNOWN here — we must NOT claim `false`. The merge
+  // in normalize.ts uses `ext.reasoning ?? heuristic.reasoning`, so an explicit
+  // `false` here would wrongly override the name-heuristic (hy3, DeepSeek-V4-Flash
+  // → reasoning=true). Leaving it undefined lets the heuristic decide.
   return {
     capabilities: {
       tools: true,
       input: ["text"],
       output: ["text"],
-      reasoning: false,
     },
     limits: { context, output, input: context },
   };

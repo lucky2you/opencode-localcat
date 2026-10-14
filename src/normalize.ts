@@ -14,6 +14,7 @@
 
 import { getBackend } from "./backends.js";
 import { DEFAULT_CAPABILITIES, inferCapabilities, mergeCapabilities } from "./capabilities.js";
+import { defaultFetch, withReasoningStreamFix } from "./stream-fetch.js";
 import type { DiscoveredProvider } from "./types.js";
 
 /** opencode's fallback assumptions for an unknown model. */
@@ -56,6 +57,14 @@ export interface ConfigProvider {
   options: {
     baseURL: string;
     apiKey?: string;
+    /**
+     * Custom fetch installed so streaming responses have empty placeholder
+     * delta fields (`tool_calls: []`, `content: ""`, ...) stripped before the
+     * OpenAI-compatible parser sees them. opencode forwards this straight to
+     * `createOpenAICompatible`, which uses it as the transport.
+     */
+    fetch?: typeof fetch;
+    [key: string]: unknown;
   };
   models: Record<string, ConfigModel>;
 }
@@ -141,6 +150,10 @@ export function toProviderConfig(backend: DiscoveredProvider): ConfigProvider {
 
   const options: ConfigProvider["options"] = { baseURL: backend.baseURL };
   if (backend.apiKey) options.apiKey = backend.apiKey;
+  // opencode forwards provider `options.fetch` to createOpenAICompatible. Use
+  // it to strip empty placeholder delta fields that otherwise make the parser
+  // split reasoning into one block per token.
+  options.fetch = withReasoningStreamFix(defaultFetch());
 
   return {
     name: descriptor.displayName,

@@ -151,16 +151,11 @@ All options live under the plugin tuple's second element in `opencode.jsonc` (i.
 - workbuddy-wild: confirm the model id has the `workbuddy/` or `traework/` prefix. The plugin filters prefix-less ids, but if you've configured the model elsewhere (e.g. directly in `opencode.jsonc`'s `provider` section) that bypasses the plugin's filter.
 
 **Reasoning/thinking renders as one block per token (lots of tiny `Thought` lines).**
-- This is the opencode symptom of a *reasoning-field mismatch*, not a TUI quirk. The generic `@ai-sdk/openai-compatible` provider aggregates reasoning into a single block only when the model's `interleaved` points at the **exact field the backend streams thinking under**. If that field is wrong, or a reasoning model isn't told where to look, every delta renders as its own block.
-- The plugin sets `interleaved` to `backends.<id>.reasoningField` (default `"reasoning_content"`) for **every** model of a reasoning-capable backend. If your backend uses a different streamed field (e.g. `"reasoning"`, `"reasoning_text"`, `"thinking"`), override it:
-  ```jsonc
-  { "plugin": [["opencode-localcat", { "backends": { "workbuddy-wild": { "reasoningField": "reasoning" } } }]] }
-  ```
-- Different models on the same backend may stream reasoning under different field names. Override per-model:
-  ```jsonc
-  { "plugin": [["opencode-localcat", { "backends": { "workbuddy-wild": { "models": { "workbuddy/hy3": { "reasoningField": "reasoning_content" }, "workbuddy/other": { "reasoningField": "reasoning" } } } } }]] }
-  ```
-- To confirm the streamed field yourself, watch the raw SSE: `curl -N -X POST <baseURL>/chat/completions -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -d '{"model":"<id>","stream":true,"messages":[{"role":"user","content":"hi"}]}'` and look at which key inside each `delta` carries the thinking text.
+- This happens when a backend streams **empty placeholder fields** on every delta — most commonly `"tool_calls": []` (often alongside `"content": ""`, `"function_call": null`, `"refusal": ""`, `"extra_fields": null`). opencode's bundled `@ai-sdk/openai-compatible` parser treats a *present* `tool_calls` key as a tool call (`delta.tool_calls != null`), and an empty array `[]` satisfies that check: it closes the open reasoning block before each subsequent delta, so every 1-2 token reasoning chunk becomes its own `Thought`.
+- workbuddy-wild's `workbuddy/*` models hit this because that path passes the upstream OpenAI stream through verbatim. The `traework/*` path rewrites the stream and only emits non-empty fields, which is why it aggregates correctly.
+- The plugin installs a custom `fetch` on each provider (`provider.<id>.options.fetch`, forwarded by opencode to `createOpenAICompatible`) that strips these empty placeholder fields before the parser sees them, so reasoning aggregates into one block regardless of backend. No configuration is required.
+- `backends.<id>.reasoningField` (default `"reasoning_content"`) remains available for the *separate* case where a backend streams thinking under a non-standard key (e.g. `"reasoning"`, `"reasoning_text"`, `"thinking"`) and is replayed on the request side. Override per-model via `backends.<id>.models.<modelID>.reasoningField`.
+- To confirm what your backend streams, watch the raw SSE: `curl -N -X POST <baseURL>/chat/completions -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -d '{"model":"<id>","stream":true,"messages":[{"role":"user","content":"hi"}]}'` and look at the keys inside each `delta`.
 
 **A newly added backend model doesn't show up.**
 - Discovery runs once at config load. Restart opencode to re-run it.
@@ -184,6 +179,7 @@ opencode-localcat/
 |  +- capabilities.ts        # name-pattern heuristics + mergeCapabilities()
 |  +- discovery.ts           # fetchJSON + discoverLlamaCpp/LiteLLM/WorkBuddyWild
 |  +- normalize.ts           # toModelConfig / toProviderConfig -> provider.<id> config block
+|  +- stream-fetch.ts        # custom fetch that prunes empty placeholder delta fields
 +- dist/                     # built output (gitignored; rebuilt via npm run build)
 +- README.md
 ```
