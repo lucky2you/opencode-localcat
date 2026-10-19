@@ -5,9 +5,12 @@
  * lives in discovery.ts; this file just gives the plugin a stable identity
  * (display name, default port, OpenAI-compatible package) per backend.
  *
- * The `package` field must be `@ai-sdk/openai-compatible` for all three
- * backends, because llama.cpp, litellm, and workbuddy-wild all speak the
- * OpenAI Chat Completions protocol on `/v1/chat/completions`.
+ * All three backends speak the OpenAI Chat Completions protocol on
+ * `/v1/chat/completions`, so the same package routes each of them:
+ *   - opencode V1 uses the `@ai-sdk/openai-compatible` npm package
+ *     (`packageName`, emitted as `provider.<id>.npm`).
+ *   - opencode V2 uses the built-in `@opencode/ai/providers/openai-compatible`
+ *     runtime package (see `V2_PACKAGE` in normalize.ts).
  */
 
 import type { BackendConfig, BackendID, ModelOverride } from "./types.js";
@@ -22,7 +25,7 @@ export interface BackendDescriptor {
   defaultBaseURL: string;
   /** Sentinel used when apiKey is omitted. llama.cpp accepts any string here; workbuddy-wild requires a real key. */
   defaultApiKey: string;
-  /** The npm provider package OpenCode should use to route chat completions. */
+  /** opencode V1 npm package used to route chat completions (`provider.<id>.npm`). */
   packageName: string;
   /** Whether this backend requires a non-trivial apiKey (workbuddy-wild enforces it; llama.cpp typically doesn't). */
   requiresApiKey: boolean;

@@ -12,7 +12,8 @@
  */
 
 // ---------------------------------------------------------------------------
-// Plugin options (opencode.jsonc → plugin tuple `[[spec, options]]`)
+// Plugin options (opencode.jsonc → V2 `plugins` entry `{ package, options }`,
+// or V1 `plugin` tuple `[spec, options]`)
 // ---------------------------------------------------------------------------
 
 export type BackendID = "llama-cpp" | "litellm" | "workbuddy-wild";

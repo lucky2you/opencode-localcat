@@ -1,21 +1,37 @@
 ﻿{
-  // Example opencode 1.x config wiring up the opencode-localcat plugin.
+  // Example opencode config wiring up the opencode-localcat plugin.
   // Drop this (or merge relevant fields) into:
   //   - ~/.config/opencode/opencode.jsonc   (global)
   //   - .opencode/opencode.jsonc            (project)
   // Then run `opencode` and use /providers and /models to verify discovery.
   //
-  // `plugin` is an array of specs. A spec is either a string or a
-  // `[spec, options]` tuple. A plugin is referenced by package name
-  // ("opencode-localcat") or by a path/URL to its built entry
-  // (dist/index.js) — relative ("./..."), absolute ("/..."), or file:// URL
-  // all work. A `file://` prefix is NOT required.
+  // This plugin supports BOTH plugin APIs from one package.
+  //
+  // opencode V2 uses `plugins` (not `plugin`). Each entry is either a
+  // package/path string or an object `{ package, options }`. A plugin is
+  // referenced by package name ("opencode-localcat") or by a path/URL to its
+  // built DIRECTORY (the dist/ directory, which contains index.js) — relative
+  // ("./..."), absolute ("/..."), or file:// URL all work. A `file://` prefix
+  // is NOT required.
+  //
+  // IMPORTANT: V2 requires a local path entry to be a plugin *directory*, not
+  // a .js file — point at ".../opencode-localcat/dist", not
+  // ".../opencode-localcat/dist/index.js". (A file path is only valid on V1.)
+  //
+  // opencode V1 (legacy) uses `plugin` (singular) with [spec, options] tuples
+  // and the SAME options object. The equivalent V1 config would be:
+  //
+  //   {
+  //     "plugin": [
+  //       ["opencode-localcat", { "backends": { /* ...same options... */ } }]
+  //     ]
+  //   }
 
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    [
-      "file:///path/to/opencode-localcat/dist/index.js",
-      {
+  "plugins": [
+    {
+      "package": "file:///path/to/opencode-localcat/dist",
+      "options": {
         // Per-backend config. Each backend supports:
         //   baseURL          (required when enabled)  e.g. "http://127.0.0.1:8080/v1"
         //   apiKey           (optional)                bearer token; "no-key-required" if omitted
@@ -29,9 +45,8 @@
         //                                                  aggregates reasoning into one block
         //   includeNonChat   (optional, litellm only)  include embedding/completion models in the list
         //
-        // Discovery runs once when opencode loads its config. The 1.x plugin
-        // API has no live-reload hook, so restart opencode to pick up newly
-        // added backend models.
+        // Discovery runs once when opencode loads the plugin (V2 setup / V1 config).
+        // Restart opencode to pick up newly added backend models.
         "backends": {
           "llama-cpp": {
             "enabled": true,
@@ -56,6 +71,6 @@
           }
         }
       }
-    ]
+    }
   ]
 }

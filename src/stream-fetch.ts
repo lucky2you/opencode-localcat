@@ -1,5 +1,12 @@
 /**
- * Stream normalization for OpenAI-compatible backends.
+ * Stream normalization for OpenAI-compatible backends. Used by the V1 path.
+ *
+ * > Status: this custom-`fetch` transport is installed by the V1 `config` hook
+ * > (`provider.<id>.options.fetch`, forwarded by opencode to
+ * > `createOpenAICompatible`). The V2 path does not use it: opencode V2 ships
+ * > its own OpenAI-compatible parser, which reads reasoning from
+ * > `compatibility.reasoningField`, merges consecutive deltas natively, and
+ * > treats an empty `tool_calls: []` as "no tool calls".
  *
  * Some servers (notably workbuddy-wild's `workbuddy/*` passthrough) include
  * empty placeholder fields on every streaming delta, e.g.:
@@ -7,17 +14,15 @@
  *   {"delta":{"content":"","reasoning_content":"The","function_call":null,
  *             "refusal":"","tool_calls":[],"extra_fields":null}}
  *
- * opencode's bundled `@ai-sdk/openai-compatible` parser treats a *present*
+ * opencode V1's bundled `@ai-sdk/openai-compatible` parser treats a *present*
  * `tool_calls` key as a tool call (`if (delta.tool_calls != null)`), and an
  * empty array `[]` satisfies that check. The parser then closes the open
  * reasoning block before every subsequent delta, so each 1-2 token reasoning
  * chunk renders as its own "Thought" block instead of one aggregated block.
  *
- * We install a custom `fetch` on the provider (opencode forwards
- * `provider.<id>.options.fetch` to `createOpenAICompatible`). It rewrites
- * streaming SSE chunks to drop these empty placeholders, matching the shape a
- * well-behaved OpenAI server emits. Without them the parser aggregates
- * reasoning correctly.
+ * The custom fetch rewrites streaming SSE chunks to drop these empty
+ * placeholders, matching the shape a well-behaved OpenAI server emits. Without
+ * them the parser aggregates reasoning correctly.
  */
 
 /** A fetch implementation, matching the WHATWG signature. */
