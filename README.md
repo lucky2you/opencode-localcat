@@ -170,7 +170,8 @@ All options live under the `options` field of a plugin entry in `opencode.jsonc`
 ### workbuddy-wild
 
 - Default port `7863` (the Go proxy `workbuddy-wild`).
-- **Model IDs must use the `workbuddy/` or `traework/` prefix** (e.g. `workbuddy/hy3`, `traework/DeepSeek-V4-Flash`). The server rejects prefix-less names with HTTP 400. The plugin also filters prefix-less ids defensively at discovery time so they never appear in `/models`.
+- **Model IDs normally use the `workbuddy/` or `traework/` prefix** (e.g. `workbuddy/hy3`, `traework/DeepSeek-V4-Flash`). The server rejects most prefix-less names with HTTP 400. The plugin filters invalid prefix-less ids defensively at discovery time so they never appear in `/models`.
+- **Exception: the synthetic `auto-*` aliases are accepted.** workbuddy-wild exposes bare `auto-free` and `auto-nofree` ids (`owned_by: "synthetic"`) that the proxy resolves to concrete models server-side. They have no `workbuddy/` prefix but are valid, callable model ids, so the plugin keeps them (any `owned_by: "synthetic"` model is kept, with an allowlist fallback in `backends.ts`). A chat-time failure from these returns a transient HTTP 503 "all accounts unavailable", not an invalid-model error. Other bare ids are still filtered out.
 - The `/v1/models` response from workbuddy-wild already carries `context_length` and `max_output_tokens` inline on each model, so no extra endpoint probe is needed.
 - workbuddy-wild does **not** expose `supports_function_calling` / `supports_vision` / `supports_reasoning` flags. Capabilities beyond context/output limits come from the plugin's name heuristics (e.g. `hy3` -> reasoning=true, `DeepSeek-V4-Flash` -> reasoning=true).
 
@@ -186,7 +187,7 @@ All options live under the `options` field of a plugin entry in `opencode.jsonc`
 - For workbuddy-wild: the limits come straight from `/v1/models`'s `context_length` / `max_output_tokens`. If those are `0` or missing, the server didn't fill them in for that model.
 
 **A model appears in `/models` but chat calls fail with `400 invalid_model`.**
-- workbuddy-wild: confirm the model id has the `workbuddy/` or `traework/` prefix. The plugin filters prefix-less ids, but if you've configured the model elsewhere (e.g. directly in `opencode.jsonc`'s `providers` section) that bypasses the plugin's filter.
+- workbuddy-wild: confirm the model id has the `workbuddy/` or `traework/` prefix (or is a synthetic `auto-*` alias such as `auto-free` / `auto-nofree`). The plugin filters invalid prefix-less ids, but if you've configured the model elsewhere (e.g. directly in `opencode.jsonc`'s `providers` section) that bypasses the plugin's filter.
 
 **Reasoning/thinking renders as one block per token (lots of tiny `Thought` lines).**
 - In V1 this happened when a backend streams **empty placeholder fields** on every delta — most commonly `"tool_calls": []` (often alongside `"content": ""`, `"function_call": null`, `"refusal": ""`, `"extra_fields": null`). opencode's bundled `@ai-sdk/openai-compatible` parser treats a *present* `tool_calls` key as a tool call (`delta.tool_calls != null`), and an empty array `[]` satisfies that check: it closes the open reasoning block before each subsequent delta, so every 1-2 token reasoning chunk becomes its own `Thought`.

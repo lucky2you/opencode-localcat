@@ -95,13 +95,42 @@ export function resolveConfig(
 }
 
 /**
- * Required model ID prefix for workbuddy-wild. The server rejects any model
+ * Required model ID prefix for workbuddy-wild. The server rejects most models
  * without one of these prefixes with HTTP 400, so we filter them out at
  * discovery time to avoid showing dead entries in /models.
  */
 export const WORKBUDDY_WILD_PREFIXES = ["workbuddy/", "traework/"] as const;
 
+/**
+ * Synthetic "auto" aliases workbuddy-wild accepts despite having no prefix.
+ * These are `owned_by: "synthetic"` aliases the proxy resolves to a concrete
+ * model server-side. `auto-free` picks the cheapest (incl. free) model and
+ * `auto-nofree` the cheapest paid one; both are valid, callable model ids.
+ *
+ * A bare id that fails at chat time fails with a transient account error
+ * (HTTP 503 "all accounts unavailable (cooling/disabled)"), NOT an invalid-model
+ * error — so these are genuine models, not dead entries. We can't drop the
+ * prefix filter entirely because truly invalid ids do exist; instead we accept
+ * anything marked `owned_by: "synthetic"`, with this list as a fallback for
+ * responses that omit `owned_by`.
+ */
+export const WORKBUDDY_WILD_BARE_ID_ALLOWLIST = ["auto-free", "auto-nofree"] as const;
+
+/** Owner value workbuddy-wild uses for its synthetic auto-select aliases. */
+export const WORKBUDDY_WILD_SYNTHETIC_OWNER = "synthetic";
+
 /** Returns true iff `id` starts with one of the workbuddy-wild prefixes. */
 export function hasWorkBuddyPrefix(id: string): boolean {
   return WORKBUDDY_WILD_PREFIXES.some((p) => id.startsWith(p));
+}
+
+/**
+ * Returns true iff `id` is a model workbuddy-wild will actually accept:
+ * it carries a required prefix, OR it is a known synthetic alias (either
+ * flagged `owned_by: "synthetic"` or on the bare-id allowlist).
+ */
+export function isWorkBuddyModelId(id: string, ownedBy?: string): boolean {
+  if (hasWorkBuddyPrefix(id)) return true;
+  if (ownedBy === WORKBUDDY_WILD_SYNTHETIC_OWNER) return true;
+  return (WORKBUDDY_WILD_BARE_ID_ALLOWLIST as readonly string[]).includes(id);
 }

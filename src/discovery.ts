@@ -9,7 +9,7 @@
  * rather than throwing �?the plugin's setup() still registers the other two.
  */
 
-import { getBackend, hasWorkBuddyPrefix, resolveConfig } from "./backends.js";
+import { getBackend, isWorkBuddyModelId, resolveConfig } from "./backends.js";
 import type {
   BackendConfig,
   BackendID,
@@ -466,9 +466,10 @@ async function discoverWorkBuddyWild(
   const acceptedIds: string[] = [];
   for (const m of list.body.data ?? []) {
     if (!m?.id) continue;
-    if (!hasWorkBuddyPrefix(m.id)) {
-      // Defensive: server already enforces this, but skip if it ever slips through.
-      console.warn(`[local-models] workbuddy-wild model id without prefix, skipping: ${m.id}`);
+    if (!isWorkBuddyModelId(m.id, typeof m.owned_by === "string" ? m.owned_by : undefined)) {
+      // Defensive: the server rejects most prefix-less ids, but the synthetic
+      // `auto-*` aliases (owned_by: "synthetic") are valid and kept.
+      console.warn(`[local-models] workbuddy-wild model id not recognized, skipping: ${m.id}`);
       continue;
     }
     extended[m.id] = extendWorkBuddyWild(m);
